@@ -22,15 +22,18 @@ def main(user_prompt, document_ids, gpt_key):
         "data": {}
     }
 
+
 # -------------------------
 # CONFIG
 # -------------------------
 # Set your API key before running, or set it in Colab secrets.
+
 def get_api_key(gpt_key):
+    global client
     os.environ["OPENAI_API_KEY"] = gpt_key
-    return
- # <- replace or inject securely
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    return client
+
 
 MODEL_REASONING = "gpt-4.1"        # higher reasoning quality
 MODEL_LIGHT = "gpt-4.1-mini"       # cheaper/quicker, used for planning and reflections
