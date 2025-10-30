@@ -1,0 +1,199 @@
+name: Deploy Lambda Tool
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install deployment tools
+        run: |
+          python -m pip install --upgrade pip
+          
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+
+      - name: Prepare Lambda Function
+        run: |
+          set -e
+          
+          FUNC_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2 | sed 's/[^a-zA-Z0-9_-]/_/g')
+          
+          mkdir -p build
+          
+          # Copy user code to lambda_function.py
+          cat tool.py > build/lambda_function.py
+          
+          # Append robust lambda handler with PROPER QUOTES and error handling
+          echo "" >> build/lambda_function.py
+          echo "# --------------" >> build/lambda_function.py
+          echo "# AUTO-GENERATED LAMBDA HANDLER - DO NOT EDIT BELOW THIS LINE" >> build/lambda_function.py
+          echo "" >> build/lambda_function.py
+          echo "import json" >> build/lambda_function.py
+          echo "import inspect" >> build/lambda_function.py
+          echo "import traceback" >> build/lambda_function.py
+          echo "" >> build/lambda_function.py
+          echo "def lambda_handler(event, context):" >> build/lambda_function.py
+          echo "    \"\"\"Robust Lambda handler that handles multiple event formats\"\"\"" >> build/lambda_function.py
+          echo "    try:" >> build/lambda_function.py
+          echo "        # Parse the incoming event body" >> build/lambda_function.py
+          echo "        body = {}" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        # Case 1: Direct invocation with body as dict" >> build/lambda_function.py
+          echo "        if isinstance(event, dict):" >> build/lambda_function.py
+          echo "            if \"body\" in event:" >> build/lambda_function.py
+          echo "                # API Gateway format" >> build/lambda_function.py
+          echo "                body = event[\"body\"]" >> build/lambda_function.py
+          echo "                if isinstance(body, str):" >> build/lambda_function.py
+          echo "                    body = json.loads(body)" >> build/lambda_function.py
+          echo "            else:" >> build/lambda_function.py
+          echo "                # Direct dict invocation" >> build/lambda_function.py
+          echo "                body = event" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        # Case 2: String event" >> build/lambda_function.py
+          echo "        elif isinstance(event, str):" >> build/lambda_function.py
+          echo "            body = json.loads(event)" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        print(f\"Parsed body: {body}\")" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        # Find the main function" >> build/lambda_function.py
+          echo "        funcs = [v for k, v in globals().items() if callable(v) and k not in ['lambda_handler', 'traceback', 'json', 'inspect']]" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        if not funcs:" >> build/lambda_function.py
+          echo "            return {" >> build/lambda_function.py
+          echo "                \"statusCode\": 500," >> build/lambda_function.py
+          echo "                \"headers\": {\"Content-Type\": \"application/json\"}," >> build/lambda_function.py
+          echo "                \"body\": json.dumps({\"error\": \"No callable function found\"})" >> build/lambda_function.py
+          echo "            }" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        func = funcs[-1]" >> build/lambda_function.py
+          echo "        print(f\"Executing function: {func.__name__}\")" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        # Get function signature and match parameters" >> build/lambda_function.py
+          echo "        sig = inspect.signature(func)" >> build/lambda_function.py
+          echo "        args = {}" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        for param_name in sig.parameters:" >> build/lambda_function.py
+          echo "            if param_name in body:" >> build/lambda_function.py
+          echo "                args[param_name] = body[param_name]" >> build/lambda_function.py
+          echo "            else:" >> build/lambda_function.py
+          echo "                print(f\"Warning: Parameter '{param_name}' not found in body\")" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        print(f\"Calling {func.__name__} with args: {list(args.keys())}\")" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        # Execute the function" >> build/lambda_function.py
+          echo "        result = func(**args)" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        # Ensure result is JSON serializable" >> build/lambda_function.py
+          echo "        if not isinstance(result, (dict, list, str, int, float, bool, type(None))):" >> build/lambda_function.py
+          echo "            result = str(result)" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "        return {" >> build/lambda_function.py
+          echo "            \"statusCode\": 200," >> build/lambda_function.py
+          echo "            \"headers\": {\"Content-Type\": \"application/json\"}," >> build/lambda_function.py
+          echo "            \"body\": json.dumps(result)" >> build/lambda_function.py
+          echo "        }" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "    except json.JSONDecodeError as e:" >> build/lambda_function.py
+          echo "        error_msg = f\"JSON parsing error: {str(e)}\"" >> build/lambda_function.py
+          echo "        print(error_msg)" >> build/lambda_function.py
+          echo "        return {" >> build/lambda_function.py
+          echo "            \"statusCode\": 400," >> build/lambda_function.py
+          echo "            \"headers\": {\"Content-Type\": \"application/json\"}," >> build/lambda_function.py
+          echo "            \"body\": json.dumps({\"error\": error_msg, \"event_received\": str(event)[:500]})" >> build/lambda_function.py
+          echo "        }" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "    except TypeError as e:" >> build/lambda_function.py
+          echo "        error_msg = f\"Function parameter error: {str(e)}\"" >> build/lambda_function.py
+          echo "        print(error_msg)" >> build/lambda_function.py
+          echo "        return {" >> build/lambda_function.py
+          echo "            \"statusCode\": 400," >> build/lambda_function.py
+          echo "            \"headers\": {\"Content-Type\": \"application/json\"}," >> build/lambda_function.py
+          echo "            \"body\": json.dumps({\"error\": error_msg, \"traceback\": traceback.format_exc()})" >> build/lambda_function.py
+          echo "        }" >> build/lambda_function.py
+          echo "        " >> build/lambda_function.py
+          echo "    except Exception as e:" >> build/lambda_function.py
+          echo "        error_msg = f\"Execution error: {str(e)}\"" >> build/lambda_function.py
+          echo "        print(error_msg)" >> build/lambda_function.py
+          echo "        print(traceback.format_exc())" >> build/lambda_function.py
+          echo "        return {" >> build/lambda_function.py
+          echo "            \"statusCode\": 500," >> build/lambda_function.py
+          echo "            \"headers\": {\"Content-Type\": \"application/json\"}," >> build/lambda_function.py
+          echo "            \"body\": json.dumps({\"error\": error_msg, \"traceback\": traceback.format_exc()})" >> build/lambda_function.py
+          echo "        }" >> build/lambda_function.py
+          
+          # Install dependencies if requirements.txt exists
+          if [[ -s requirements.txt ]]; then
+            pip install -r requirements.txt -t build/
+          fi
+
+      - name: Deploy to Lambda
+        run: |
+          set -e
+          
+          FUNC_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2 | sed 's/[^a-zA-Z0-9_-]/_/g')
+          
+          cd build
+          zip -r "../${FUNC_NAME}.zip" . > /dev/null
+          cd ..
+          
+          if aws lambda get-function --function-name "$FUNC_NAME" > /dev/null 2>&1; then
+            max_retries=5
+            attempt=1
+            while [ $attempt -le $max_retries ]; do
+              if aws lambda update-function-code \
+                  --function-name "$FUNC_NAME" \
+                  --zip-file fileb://"${FUNC_NAME}.zip"; then
+                
+                sleep 5
+                
+                aws lambda update-function-configuration \
+                  --function-name "$FUNC_NAME" \
+                  --environment "Variables={ENV=prod,TOOL_SECRET=${{ secrets.TOOL_SECRET }}}" \
+                  --timeout 60 \
+                  --memory-size 256
+                
+                echo "✅ Successfully updated $FUNC_NAME"
+                break
+              else
+                echo "⚠️ Retrying in 10s..."
+                sleep 10
+              fi
+              attempt=$((attempt + 1))
+            done
+            
+          else
+            aws lambda create-function \
+              --function-name "$FUNC_NAME" \
+              --runtime python3.11 \
+              --role arn:aws:iam::851725561714:role/Python_lambda \
+              --handler lambda_function.lambda_handler \
+              --zip-file fileb://"${FUNC_NAME}.zip" \
+              --timeout 60 \
+              --memory-size 256 \
+              --environment "Variables={ENV=prod,TOOL_SECRET=${{ secrets.TOOL_SECRET }}}"
+            
+            echo "✅ Created $FUNC_NAME"
+          fi
