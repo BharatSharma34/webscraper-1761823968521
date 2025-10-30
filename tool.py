@@ -14,11 +14,11 @@ def main(user_prompt, document_ids, gpt_key):
 #     dict - JSON-serializable response
 #     """
 #     # Your tool logic here
-    print("document_ids", document_ids)
-    message = run_agent(user_prompt, gpt_key)
+    print("document_ids", document_ids, user_prompt)
+    # message = run_agent(user_prompt, gpt_key)
     return {
         "success": True,
-        "message": message,
+        "message": f"{gpt_key}",
         "data": {}
     }
 
